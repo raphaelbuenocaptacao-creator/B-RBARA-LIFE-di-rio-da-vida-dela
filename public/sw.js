@@ -1,5 +1,6 @@
-const CACHE_NAME = 'barbara-life-shell-v1'
-const APP_SHELL = ['/', '/index.html', '/offline.html', '/manifest.webmanifest', '/icon.svg']
+const CACHE_NAME = 'barbara-life-shell-v2'
+const BASE = '/B-RBARA-LIFE-di-rio-da-vida-dela/'
+const APP_SHELL = [BASE, `${BASE}index.html`, `${BASE}offline.html`, `${BASE}manifest.webmanifest`, `${BASE}icon.svg`]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)))
@@ -19,18 +20,16 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url)
   const isPrivateOrApi =
-    url.hostname.endsWith('.supabase.co') ||
+    url.hostname === 'aureonbase.vercel.app' ||
     request.headers.has('authorization') ||
     url.pathname.includes('/auth/') ||
-    url.pathname.includes('/rest/v1/') ||
-    url.pathname.includes('/storage/v1/')
+    url.pathname.includes('/v1/projects/') ||
+    url.pathname.includes('/api/projects/')
 
   if (isPrivateOrApi) return
 
   if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request).catch(() => caches.match('/offline.html'))
-    )
+    event.respondWith(fetch(request).catch(() => caches.match(`${BASE}offline.html`)))
     return
   }
 
