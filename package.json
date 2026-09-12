@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "pwa:icons": "node scripts/generate-pwa-icons.mjs",
     "test": "vitest run",
-    "build": "npm test && tsc -b && vite build",
+    "build": "npm run pwa:icons && npm test && tsc -b && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -14,6 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Generate production PWA icons
+        run: node scripts/generate-pwa-icons.mjs
+
       - name: Validate manifest, icons and service worker policy
         shell: bash
         run: |

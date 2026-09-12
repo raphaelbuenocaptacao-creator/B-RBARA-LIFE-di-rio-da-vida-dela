@@ -15,7 +15,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {
+    const isSecureContext = location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname)
+    if (!isSecureContext) return
+
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js?v=barbara-life-shell-v3`, {
+      scope: import.meta.env.BASE_URL,
+      updateViaCache: 'none',
+    }).then((registration) => registration.update()).catch(() => {
       // PWA registration failure should never block access to the app.
     })
   })
