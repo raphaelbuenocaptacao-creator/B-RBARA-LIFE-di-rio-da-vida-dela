@@ -1,7 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react'
-import type { Session } from '@supabase/supabase-js'
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
-import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { aureon, BARBARA_EMAIL, type AureonUser } from './lib/aureon'
 import { BeautyPage, DiaryPage, EvolutionPage, GoalsPage, HealthPage, ProfilePage, TodayPage } from './pages'
 
 const navigation = [
@@ -14,50 +13,62 @@ const navigation = [
   ['/barbara', '◌', 'Bárbara'],
 ] as const
 
-function SetupScreen() {
-  return (
-    <main className="auth-page">
-      <section className="auth-card setup-card">
-        <div className="brand-mark">BL</div>
-        <span className="card-kicker">BÁRBARA LIFE</span>
-        <h1>Seu espaço, seu tempo, sua história.</h1>
-        <p>O aplicativo já está preparado para um Supabase privado. Falta apenas conectar o projeto exclusivo da Bárbara.</p>
-        <div className="setup-code">
-          <code>VITE_SUPABASE_URL</code>
-          <code>VITE_SUPABASE_PUBLISHABLE_KEY</code>
-        </div>
-        <small>Nenhuma chave secreta deve ser colocada no frontend.</small>
-      </section>
-    </main>
-  )
-}
-
-function LoginScreen() {
-  const [email, setEmail] = useState('')
+function LoginScreen({ onLogin }: { onLogin: (user: AureonUser) => void }) {
+  const [email, setEmail] = useState(BARBARA_EMAIL)
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resetMode, setResetMode] = useState(false)
+  const [resetToken, setResetToken] = useState('')
+  const [newPassword, setNewPassword] = useState('')
 
   async function signIn(event: FormEvent) {
     event.preventDefault()
-    if (!supabase) return
     setLoading(true); setError(''); setMessage('')
-    const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-    if (authError) setError('Não foi possível entrar. Confira seu e-mail e sua senha.')
-    setLoading(false)
+    try {
+      const user = await aureon.auth.login(email, password)
+      onLogin(user)
+    } catch {
+      setError('Não foi possível entrar. Confira seu e-mail e sua senha.')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  async function resetPassword() {
-    if (!supabase || !email.trim()) {
-      setError('Digite seu e-mail primeiro para receber o link de recuperação.')
+  async function requestReset() {
+    if (!email.trim()) {
+      setError('Digite seu e-mail primeiro para receber o código de recuperação.')
       return
     }
     setLoading(true); setError(''); setMessage('')
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin })
-    if (resetError) setError('Não foi possível enviar o link agora.')
-    else setMessage('Pronto. Verifique seu e-mail para redefinir a senha.')
-    setLoading(false)
+    try {
+      await aureon.auth.requestPasswordReset(email)
+      setResetMode(true)
+      setMessage('Se o e-mail estiver autorizado, o código de recuperação será enviado para ele.')
+    } catch {
+      setError('Não foi possível solicitar a recuperação agora.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function completeReset(event: FormEvent) {
+    event.preventDefault()
+    if (newPassword.length < 10) {
+      setError('A nova senha precisa ter pelo menos 10 caracteres.')
+      return
+    }
+    setLoading(true); setError(''); setMessage('')
+    try {
+      await aureon.auth.resetPassword(email, resetToken, newPassword)
+      setResetMode(false); setResetToken(''); setNewPassword(''); setPassword('')
+      setMessage('Senha redefinida. Agora entre com a nova senha.')
+    } catch {
+      setError('Código inválido ou expirado. Solicite um novo código.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -67,14 +78,25 @@ function LoginScreen() {
         <span className="card-kicker">BÁRBARA LIFE</span>
         <h1>Bem-vinda ao seu espaço.</h1>
         <p>Seu tempo, sua rotina, sua história — guardados com carinho.</p>
-        <form className="form-stack" onSubmit={signIn}>
-          <label className="field"><span>E-mail</span><input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
-          <label className="field"><span>Senha</span><input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
-          {error && <div className="form-message error">{error}</div>}
-          {message && <div className="form-message success">{message}</div>}
-          <button className="primary-button" disabled={loading}>{loading ? 'Entrando…' : 'Entrar'}</button>
-          <button className="text-button" type="button" onClick={() => void resetPassword()} disabled={loading}>Esqueci minha senha</button>
-        </form>
+        {!resetMode ? (
+          <form className="form-stack" onSubmit={signIn}>
+            <label className="field"><span>E-mail</span><input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+            <label className="field"><span>Senha</span><input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
+            {error && <div className="form-message error">{error}</div>}
+            {message && <div className="form-message success">{message}</div>}
+            <button className="primary-button" disabled={loading}>{loading ? 'Entrando…' : 'Entrar'}</button>
+            <button className="text-button" type="button" onClick={() => void requestReset()} disabled={loading}>Esqueci minha senha</button>
+          </form>
+        ) : (
+          <form className="form-stack" onSubmit={completeReset}>
+            <label className="field"><span>Código recebido</span><input value={resetToken} onChange={(e) => setResetToken(e.target.value)} required /></label>
+            <label className="field"><span>Nova senha</span><input type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={10} required /></label>
+            {error && <div className="form-message error">{error}</div>}
+            {message && <div className="form-message success">{message}</div>}
+            <button className="primary-button" disabled={loading}>{loading ? 'Salvando…' : 'Redefinir minha senha'}</button>
+            <button className="text-button" type="button" onClick={() => setResetMode(false)}>Voltar ao login</button>
+          </form>
+        )}
         <small className="private-note">🔒 Acesso privado. Não existe cadastro público.</small>
       </section>
     </main>
@@ -85,11 +107,7 @@ function LoadingScreen() {
   return <main className="loading-page"><div className="loading-mark">B</div><p>Preparando seu espaço…</p></main>
 }
 
-function AppShell({ session }: { session: Session }) {
-  const userId = session.user.id
-  const email = session.user.email ?? ''
-  async function logout() { await supabase?.auth.signOut() }
-
+function AppShell({ user, onLogout }: { user: AureonUser; onLogout: () => Promise<void> }) {
   return (
     <div className="app-frame">
       <header className="topbar">
@@ -98,13 +116,13 @@ function AppShell({ session }: { session: Session }) {
       </header>
       <main className="content-area">
         <Routes>
-          <Route path="/" element={<TodayPage userId={userId} />} />
-          <Route path="/metas" element={<GoalsPage userId={userId} />} />
-          <Route path="/diario" element={<DiaryPage userId={userId} />} />
-          <Route path="/saude" element={<HealthPage userId={userId} />} />
-          <Route path="/beleza" element={<BeautyPage userId={userId} />} />
-          <Route path="/evolucao" element={<EvolutionPage userId={userId} />} />
-          <Route path="/barbara" element={<ProfilePage email={email} onLogout={logout} />} />
+          <Route path="/" element={<TodayPage userId={user.id} />} />
+          <Route path="/metas" element={<GoalsPage userId={user.id} />} />
+          <Route path="/diario" element={<DiaryPage userId={user.id} />} />
+          <Route path="/saude" element={<HealthPage userId={user.id} />} />
+          <Route path="/beleza" element={<BeautyPage userId={user.id} />} />
+          <Route path="/evolucao" element={<EvolutionPage userId={user.id} />} />
+          <Route path="/barbara" element={<ProfilePage email={user.email} onLogout={onLogout} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -120,23 +138,23 @@ function AppShell({ session }: { session: Session }) {
 }
 
 export default function App() {
-  const [session, setSession] = useState<Session | null>(null)
+  const [user, setUser] = useState<AureonUser | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!supabase) { setLoading(false); return }
     let mounted = true
-    void supabase.auth.getSession().then(({ data }) => {
-      if (mounted) { setSession(data.session); setLoading(false) }
+    void aureon.auth.restore().then((restored) => {
+      if (mounted) { setUser(restored); setLoading(false) }
     })
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession); setLoading(false)
-    })
-    return () => { mounted = false; data.subscription.unsubscribe() }
+    return () => { mounted = false }
   }, [])
 
-  if (!isSupabaseConfigured) return <SetupScreen />
+  async function logout() {
+    await aureon.auth.logout()
+    setUser(null)
+  }
+
   if (loading) return <LoadingScreen />
-  if (!session) return <LoginScreen />
-  return <AppShell session={session} />
+  if (!user) return <LoginScreen onLogin={setUser} />
+  return <AppShell user={user} onLogout={logout} />
 }
