@@ -213,15 +213,12 @@ export const aureon = {
     },
     async changePassword(currentPassword: string, newPassword: string) {
       if (!isValidNewPassword(newPassword) || !currentPassword || currentPassword === newPassword) throw new Error('invalid_new_password')
-      try {
-        await request<void>('/auth/change-password', {
-          method: 'POST',
-          body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
-          retry: false,
-        })
-      } finally {
-        clearTokens()
-      }
+      await request<void>('/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+        retry: false,
+      })
+      clearTokens()
     },
     async requestPasswordReset(email: string) {
       await request<{ ok: true }>('/auth/request-password-reset', {
