@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { flattenRecord, isBarbaraEmail } from './aureon'
+import { flattenRecord, isBarbaraEmail, isValidNewPassword } from './aureon'
 
 describe('AUREON record helpers', () => {
   it('flattens AUREON project records into app rows', () => {
@@ -14,5 +14,10 @@ describe('AUREON record helpers', () => {
   it('only accepts the authorized Bárbara email', () => {
     expect(isBarbaraEmail('Barbaraloiolalimasilva@gmail.com')).toBe(true)
     expect(isBarbaraEmail('outra@pessoa.com')).toBe(false)
+  })
+
+  it('requires at least ten characters for a new password', () => {
+    expect(isValidNewPassword('123456789')).toBe(false)
+    expect(isValidNewPassword('1234567890')).toBe(true)
   })
 })
