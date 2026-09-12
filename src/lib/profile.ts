@@ -2,6 +2,8 @@ export type ProfileTheme = 'rose' | 'light' | 'night'
 
 const MAX_PROFILE_IMAGE_BYTES = 128 * 1024
 const PIN_ITERATIONS = 120_000
+export const DIARY_PIN_STORAGE_KEY = 'barbara_life_diary_pin_v1'
+export const THEME_STORAGE_KEY = 'barbara_life_theme_v1'
 
 export type DiaryPinRecord = {
   version: 1
@@ -11,6 +13,19 @@ export type DiaryPinRecord = {
 
 export function normalizeTheme(value: unknown): ProfileTheme {
   return value === 'light' || value === 'night' || value === 'rose' ? value : 'rose'
+}
+
+export function applyTheme(value: unknown) {
+  const theme = normalizeTheme(value)
+  document.documentElement.dataset.theme = theme
+  try { localStorage.setItem(THEME_STORAGE_KEY, theme) } catch {}
+  return theme
+}
+
+export function restoreTheme() {
+  let stored: string | null = null
+  try { stored = localStorage.getItem(THEME_STORAGE_KEY) } catch {}
+  return applyTheme(stored)
 }
 
 export function isDiaryPinValid(pin: string) {
@@ -58,6 +73,25 @@ export async function createDiaryPinRecord(pin: string): Promise<DiaryPinRecord>
   const salt = crypto.getRandomValues(new Uint8Array(16))
   const digest = await pbkdf2(pin, salt)
   return { version: 1, salt: bytesToBase64(salt), hash: bytesToBase64(digest) }
+}
+
+export function loadDiaryPinRecord(): DiaryPinRecord | null {
+  try {
+    const raw = localStorage.getItem(DIARY_PIN_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as DiaryPinRecord
+    if (parsed?.version !== 1 || typeof parsed.salt !== 'string' || typeof parsed.hash !== 'string') return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+export function saveDiaryPinRecord(record: DiaryPinRecord | null) {
+  try {
+    if (record) localStorage.setItem(DIARY_PIN_STORAGE_KEY, JSON.stringify(record))
+    else localStorage.removeItem(DIARY_PIN_STORAGE_KEY)
+  } catch {}
 }
 
 export async function verifyDiaryPin(pin: string, record: DiaryPinRecord | null | undefined) {
