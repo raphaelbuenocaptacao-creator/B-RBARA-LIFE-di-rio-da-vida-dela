@@ -25,6 +25,10 @@ export function isBarbaraEmail(email: string) {
   return email.trim().toLowerCase() === BARBARA_EMAIL
 }
 
+export function isValidNewPassword(password: string) {
+  return password.length >= 10 && password.length <= 128
+}
+
 export function flattenRecord<T extends Record<string, unknown>>(record: AureonRecord<T>): T & { id: string; created_at?: string; updated_at?: string } {
   return {
     id: record.id,
@@ -116,6 +120,27 @@ async function assertBarbaraAccess(user: AureonUser) {
   return user
 }
 
+async function listRecords<T extends Record<string, unknown>>(collection: string, limit = 500) {
+  const rows = await request<AureonRecord<T>[]>(`/v1/projects/${PROJECT_SLUG}/data/${encodeURIComponent(collection)}?environment=production&limit=${limit}`)
+  return rows.map(flattenRecord)
+}
+
+async function createRecord<T extends Record<string, unknown>>(collection: string, data: T) {
+  const row = await request<AureonRecord<T>>(`/v1/projects/${PROJECT_SLUG}/data/${encodeURIComponent(collection)}`, {
+    method: 'POST',
+    body: JSON.stringify({ environment: 'production', data }),
+  })
+  return flattenRecord(row)
+}
+
+async function updateRecord<T extends Record<string, unknown>>(collection: string, id: string, data: T) {
+  const row = await request<AureonRecord<T>>(`/v1/projects/${PROJECT_SLUG}/data/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ environment: 'production', data }),
+  })
+  return flattenRecord(row)
+}
+
 export const aureon = {
   auth: {
     async login(email: string, password: string) {
@@ -159,6 +184,7 @@ export const aureon = {
       })
     },
     async resetPassword(email: string, token: string, newPassword: string) {
+      if (!isValidNewPassword(newPassword)) throw new Error('invalid_new_password')
       await request<void>('/auth/reset-password', {
         method: 'POST',
         body: JSON.stringify({ email: email.trim().toLowerCase(), token: token.trim(), new_password: newPassword }),
@@ -171,34 +197,19 @@ export const aureon = {
     },
   },
   data: {
-    async list<T extends Record<string, unknown>>(collection: string, limit = 500) {
-      const rows = await request<AureonRecord<T>[]>(`/v1/projects/${PROJECT_SLUG}/data/${encodeURIComponent(collection)}?environment=production&limit=${limit}`)
-      return rows.map(flattenRecord)
-    },
-    async create<T extends Record<string, unknown>>(collection: string, data: T) {
-      const row = await request<AureonRecord<T>>(`/v1/projects/${PROJECT_SLUG}/data/${encodeURIComponent(collection)}`, {
-        method: 'POST',
-        body: JSON.stringify({ environment: 'production', data }),
-      })
-      return flattenRecord(row)
-    },
-    async update<T extends Record<string, unknown>>(collection: string, id: string, data: T) {
-      const row = await request<AureonRecord<T>>(`/v1/projects/${PROJECT_SLUG}/data/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ environment: 'production', data }),
-      })
-      return flattenRecord(row)
-    },
+    list: listRecords,
+    create: createRecord,
+    update: updateRecord,
     async remove(collection: string, id: string) {
       await request<void>(`/v1/projects/${PROJECT_SLUG}/data/${encodeURIComponent(collection)}/${encodeURIComponent(id)}?environment=production`, {
         method: 'DELETE',
       })
     },
     async upsertByField<T extends Record<string, unknown>>(collection: string, field: string, value: unknown, data: T) {
-      const rows = await this.list<Record<string, unknown>>(collection)
+      const rows = await listRecords<Record<string, unknown>>(collection)
       const found = rows.find((row) => row[field] === value)
-      if (found) return this.update(collection, String(found.id), data)
-      return this.create(collection, data)
+      if (found) return updateRecord(collection, String(found.id), data)
+      return createRecord(collection, data)
     },
   },
 }
