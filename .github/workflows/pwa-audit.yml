@@ -1,0 +1,66 @@
+name: PWA Audit
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate manifest, icons and service worker policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs')
+          const m = JSON.parse(fs.readFileSync('public/manifest.webmanifest','utf8'))
+          for (const key of ['name','short_name','start_url','display','theme_color']) {
+            if (!m[key]) throw new Error(`manifest missing ${key}`)
+          }
+          if (m.display !== 'standalone') throw new Error('manifest display must be standalone')
+          const icons = m.icons || []
+          const requireIcon = (size, maskable=false) => {
+            const found = icons.find(i => i.sizes === size && i.type === 'image/png' && (!maskable || String(i.purpose||'').includes('maskable')))
+            if (!found) throw new Error(`missing ${size} PNG${maskable ? ' maskable' : ''}`)
+            if (!fs.existsSync(`public/${found.src}`)) throw new Error(`missing icon file ${found.src}`)
+          }
+          requireIcon('192x192')
+          requireIcon('512x512')
+          requireIcon('512x512', true)
+
+          const sw = fs.readFileSync('public/sw.js','utf8')
+          const main = fs.readFileSync('src/main.tsx','utf8')
+          const html = fs.readFileSync('index.html','utf8')
+          const requiredSw = ['authorization','cookie','range','if-range','no-store','private','set-cookie','content-range','CACHE_PREFIX']
+          for (const token of requiredSw) if (!sw.toLowerCase().includes(token.toLowerCase())) throw new Error(`sw missing ${token}`)
+          if (/keys\.filter\(\(key\) => key !== CACHE_NAME\)/.test(sw)) throw new Error('sw deletes unrelated caches')
+          const match = sw.match(/CACHE_NAME\s*=\s*['"]([^'"]+)/)
+          if (!match) throw new Error('missing CACHE_NAME')
+          if (!main.includes(`sw.js?v=${match[1]}`)) throw new Error(`service worker registration not aligned with ${match[1]}`)
+          if (!main.includes("updateViaCache: 'none'") && !main.includes('updateViaCache: "none"')) throw new Error('registration must use updateViaCache none')
+          if (!html.includes('rel="manifest"') || !html.includes('theme-color') || !html.includes('viewport')) throw new Error('missing mobile PWA meta')
+          NODE
+
+      - name: Verify PNG dimensions
+        run: |
+          python - <<'PY'
+          import struct
+          for path, expected in [('public/icon-192.png',192), ('public/icon-512.png',512), ('public/icon-maskable-512.png',512)]:
+              with open(path,'rb') as f:
+                  sig=f.read(24)
+              if sig[:8] != b'\x89PNG\r\n\x1a\n':
+                  raise SystemExit(f'{path}: not a PNG')
+              w,h=struct.unpack('>II',sig[16:24])
+              if (w,h)!=(expected,expected):
+                  raise SystemExit(f'{path}: expected {expected}x{expected}, got {w}x{h}')
+          PY
+
+      - name: Test and build
+        run: npm install && npm run build
