@@ -2,15 +2,15 @@
   "name": "Diário da Bárbara 💗",
   "short_name": "Bárbara Life",
   "description": "Seu espaço, seu tempo, sua história.",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "/B-RBARA-LIFE-di-rio-da-vida-dela/",
+  "scope": "/B-RBARA-LIFE-di-rio-da-vida-dela/",
   "display": "standalone",
   "background_color": "#fff9fb",
   "theme_color": "#b85c7a",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
