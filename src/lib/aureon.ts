@@ -11,12 +11,28 @@ export type AureonUser = {
   is_superadmin?: boolean
 }
 
+export type GoogleAuthConfig = {
+  enabled: boolean
+  client_id: string | null
+}
+
 type AureonRecord<T extends Record<string, unknown>> = {
   id: string
   data: T
   owner_user_id?: string | null
   created_at?: string
   updated_at?: string
+}
+
+type StorageObject = {
+  id: string
+  bucket: string
+  object_key: string
+  owner_user_id: string
+  content_type: string
+  size_bytes: number
+  visibility: 'private' | 'project' | 'public'
+  content_base64?: string
 }
 
 type RequestOptions = RequestInit & { retry?: boolean }
@@ -141,12 +157,31 @@ async function updateRecord<T extends Record<string, unknown>>(collection: strin
   return flattenRecord(row)
 }
 
+function storagePath(bucket: string, key: string) {
+  const safeBucket = encodeURIComponent(bucket)
+  const safeKey = key.split('/').map((part) => encodeURIComponent(part)).join('/')
+  return `/v1/projects/${PROJECT_SLUG}/storage/${safeBucket}/${safeKey}`
+}
+
 export const aureon = {
   auth: {
     async login(email: string, password: string) {
       const data = await request<{ user: AureonUser; access_token: string; refresh_token: string }>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+        retry: false,
+      })
+      persistTokens(data)
+      await assertBarbaraAccess(data.user)
+      return data.user
+    },
+    async getGoogleConfig() {
+      return request<GoogleAuthConfig>('/auth/google/config', { retry: false })
+    },
+    async loginWithGoogle(credential: string) {
+      const data = await request<{ user: AureonUser; access_token: string; refresh_token: string }>('/auth/google', {
+        method: 'POST',
+        body: JSON.stringify({ credential, project_slug: PROJECT_SLUG }),
         retry: false,
       })
       persistTokens(data)
@@ -172,6 +207,18 @@ export const aureon = {
             retry: false,
           })
         }
+      } finally {
+        clearTokens()
+      }
+    },
+    async changePassword(currentPassword: string, newPassword: string) {
+      if (!isValidNewPassword(newPassword) || !currentPassword || currentPassword === newPassword) throw new Error('invalid_new_password')
+      try {
+        await request<void>('/auth/change-password', {
+          method: 'POST',
+          body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+          retry: false,
+        })
       } finally {
         clearTokens()
       }
@@ -210,6 +257,30 @@ export const aureon = {
       const found = rows.find((row) => row[field] === value)
       if (found) return updateRecord(collection, String(found.id), data)
       return createRecord(collection, data)
+    },
+  },
+  storage: {
+    async get(bucket: string, key: string) {
+      return request<StorageObject>(storagePath(bucket, key))
+    },
+    async upload(bucket: string, key: string, contentBase64: string, contentType: string) {
+      return request<StorageObject>(storagePath(bucket, key), {
+        method: 'POST',
+        body: JSON.stringify({ content_base64: contentBase64, content_type: contentType, visibility: 'private' }),
+      })
+    },
+    async remove(bucket: string, key: string) {
+      await request<void>(storagePath(bucket, key), { method: 'DELETE' })
+    },
+    async replace(bucket: string, key: string, contentBase64: string, contentType: string) {
+      try { await request<void>(storagePath(bucket, key), { method: 'DELETE' }) } catch (error) {
+        const status = (error as Error & { status?: number }).status
+        if (status !== 404) throw error
+      }
+      return request<StorageObject>(storagePath(bucket, key), {
+        method: 'POST',
+        body: JSON.stringify({ content_base64: contentBase64, content_type: contentType, visibility: 'private' }),
+      })
     },
   },
 }
