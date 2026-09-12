@@ -1,7 +1,10 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { GoogleSignInButton } from './components/GoogleSignInButton'
 import { aureon, BARBARA_EMAIL, type AureonUser } from './lib/aureon'
-import { BeautyPage, DiaryPage, EvolutionPage, GoalsPage, HealthPage, ProfilePage, TodayPage } from './pages'
+import { loadDiaryPinRecord, restoreTheme, verifyDiaryPin } from './lib/profile'
+import { BeautyPage, DiaryPage, EvolutionPage, GoalsPage, HealthPage, TodayPage } from './pages'
+import { ProfilePage } from './ProfilePage'
 
 const navigation = [
   ['/', '⌂', 'Hoje'],
@@ -17,15 +20,11 @@ function LoginScreen({ onLogin }: { onLogin: (user: AureonUser) => void }) {
   const [email, setEmail] = useState(BARBARA_EMAIL)
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
-  const [resetMode, setResetMode] = useState(false)
-  const [resetToken, setResetToken] = useState('')
-  const [newPassword, setNewPassword] = useState('')
 
   async function signIn(event: FormEvent) {
     event.preventDefault()
-    setLoading(true); setError(''); setMessage('')
+    setLoading(true); setError('')
     try {
       const user = await aureon.auth.login(email, password)
       onLogin(user)
@@ -36,40 +35,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AureonUser) => void }) {
     }
   }
 
-  async function requestReset() {
-    if (!email.trim()) {
-      setError('Digite seu e-mail primeiro para receber o código de recuperação.')
-      return
-    }
-    setLoading(true); setError(''); setMessage('')
-    try {
-      await aureon.auth.requestPasswordReset(email)
-      setResetMode(true)
-      setMessage('Se o e-mail estiver autorizado, o código de recuperação será enviado para ele.')
-    } catch {
-      setError('Não foi possível solicitar a recuperação agora.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function completeReset(event: FormEvent) {
-    event.preventDefault()
-    if (newPassword.length < 10) {
-      setError('A nova senha precisa ter pelo menos 10 caracteres.')
-      return
-    }
-    setLoading(true); setError(''); setMessage('')
-    try {
-      await aureon.auth.resetPassword(email, resetToken, newPassword)
-      setResetMode(false); setResetToken(''); setNewPassword(''); setPassword('')
-      setMessage('Senha redefinida. Agora entre com a nova senha.')
-    } catch {
-      setError('Código inválido ou expirado. Solicite um novo código.')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const googleError = useCallback((message: string) => setError(message), [])
 
   return (
     <main className="auth-page">
@@ -78,25 +44,15 @@ function LoginScreen({ onLogin }: { onLogin: (user: AureonUser) => void }) {
         <span className="card-kicker">BÁRBARA LIFE</span>
         <h1>Bem-vinda ao seu espaço.</h1>
         <p>Seu tempo, sua rotina, sua história — guardados com carinho.</p>
-        {!resetMode ? (
-          <form className="form-stack" onSubmit={signIn}>
-            <label className="field"><span>E-mail</span><input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
-            <label className="field"><span>Senha</span><input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
-            {error && <div className="form-message error">{error}</div>}
-            {message && <div className="form-message success">{message}</div>}
-            <button className="primary-button" disabled={loading}>{loading ? 'Entrando…' : 'Entrar'}</button>
-            <button className="text-button" type="button" onClick={() => void requestReset()} disabled={loading}>Esqueci minha senha</button>
-          </form>
-        ) : (
-          <form className="form-stack" onSubmit={completeReset}>
-            <label className="field"><span>Código recebido</span><input value={resetToken} onChange={(e) => setResetToken(e.target.value)} required /></label>
-            <label className="field"><span>Nova senha</span><input type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={10} required /></label>
-            {error && <div className="form-message error">{error}</div>}
-            {message && <div className="form-message success">{message}</div>}
-            <button className="primary-button" disabled={loading}>{loading ? 'Salvando…' : 'Redefinir minha senha'}</button>
-            <button className="text-button" type="button" onClick={() => setResetMode(false)}>Voltar ao login</button>
-          </form>
-        )}
+        <form className="form-stack" onSubmit={signIn}>
+          <label className="field"><span>E-mail</span><input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+          <label className="field"><span>Senha</span><input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></label>
+          {error && <div className="form-message error">{error}</div>}
+          <button className="primary-button" disabled={loading}>{loading ? 'Entrando…' : 'Entrar com senha'}</button>
+        </form>
+        <div className="auth-divider"><span>ou</span></div>
+        <GoogleSignInButton onLogin={onLogin} onError={googleError} />
+        <p className="google-recovery-copy">Esqueceu a senha? Use sua conta Google autorizada para voltar ao seu espaço.</p>
         <small className="private-note">🔒 Acesso privado. Não existe cadastro público.</small>
       </section>
     </main>
@@ -107,7 +63,49 @@ function LoadingScreen() {
   return <main className="loading-page"><div className="loading-mark">B</div><p>Preparando seu espaço…</p></main>
 }
 
-function AppShell({ user, onLogout }: { user: AureonUser; onLogout: () => Promise<void> }) {
+function DiaryGate({ userId }: { userId: string }) {
+  const [record] = useState(() => loadDiaryPinRecord())
+  const [unlocked, setUnlocked] = useState(() => !record)
+  const [pin, setPin] = useState('')
+  const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
+
+  async function unlock(event: FormEvent) {
+    event.preventDefault()
+    if (!record) return setUnlocked(true)
+    setChecking(true); setError('')
+    try {
+      if (await verifyDiaryPin(pin, record)) {
+        setUnlocked(true)
+        setPin('')
+      } else {
+        setError('PIN incorreto.')
+      }
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  if (unlocked) return <DiaryPage userId={userId} />
+
+  return (
+    <div className="page-stack diary-lock-page">
+      <section className="card diary-lock-card">
+        <div className="lock-orb">🔒</div>
+        <span className="card-kicker">Meu Diário</span>
+        <h1>Um espaço só seu.</h1>
+        <p>Digite seu PIN para abrir suas páginas.</p>
+        <form className="form-stack" onSubmit={unlock}>
+          <label className="field"><span>PIN do Diário</span><input type="password" inputMode="numeric" pattern="[0-9]*" minLength={4} maxLength={6} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} autoFocus required /></label>
+          {error && <div className="form-message error">{error}</div>}
+          <button className="primary-button" disabled={checking}>{checking ? 'Verificando…' : 'Abrir meu Diário'}</button>
+        </form>
+      </section>
+    </div>
+  )
+}
+
+function AppShell({ user, onLogout, onPasswordChanged }: { user: AureonUser; onLogout: () => Promise<void>; onPasswordChanged: () => void }) {
   return (
     <div className="app-frame">
       <header className="topbar">
@@ -118,11 +116,11 @@ function AppShell({ user, onLogout }: { user: AureonUser; onLogout: () => Promis
         <Routes>
           <Route path="/" element={<TodayPage userId={user.id} />} />
           <Route path="/metas" element={<GoalsPage userId={user.id} />} />
-          <Route path="/diario" element={<DiaryPage userId={user.id} />} />
+          <Route path="/diario" element={<DiaryGate userId={user.id} />} />
           <Route path="/saude" element={<HealthPage userId={user.id} />} />
           <Route path="/beleza" element={<BeautyPage userId={user.id} />} />
           <Route path="/evolucao" element={<EvolutionPage userId={user.id} />} />
-          <Route path="/barbara" element={<ProfilePage email={user.email} onLogout={onLogout} />} />
+          <Route path="/barbara" element={<ProfilePage userId={user.id} email={user.email} onLogout={onLogout} onPasswordChanged={onPasswordChanged} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -141,6 +139,8 @@ export default function App() {
   const [user, setUser] = useState<AureonUser | null>(null)
   const [loading, setLoading] = useState(true)
 
+  useEffect(() => { restoreTheme() }, [])
+
   useEffect(() => {
     let mounted = true
     void aureon.auth.restore().then((restored) => {
@@ -156,5 +156,5 @@ export default function App() {
 
   if (loading) return <LoadingScreen />
   if (!user) return <LoginScreen onLogin={setUser} />
-  return <AppShell user={user} onLogout={logout} />
+  return <AppShell user={user} onLogout={logout} onPasswordChanged={() => setUser(null)} />
 }
