@@ -3,7 +3,8 @@ import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import { GoogleSignInButton } from './components/GoogleSignInButton'
 import { aureon, BARBARA_EMAIL, type AureonUser } from './lib/aureon'
 import { loadDiaryPinRecord, restoreTheme, verifyDiaryPin } from './lib/profile'
-import { BeautyPage, DiaryPage, EvolutionPage, GoalsPage, HealthPage, ProfilePage, TodayPage } from './pages'
+import { BeautyPage, DiaryPage, EvolutionPage, GoalsPage, HealthPage, TodayPage } from './pages'
+import { ProfilePage } from './ProfilePage'
 
 const navigation = [
   ['/', '⌂', 'Hoje'],
