@@ -43,6 +43,7 @@ jobs:
           const html = fs.readFileSync('index.html','utf8')
           const requiredSw = ['authorization','cookie','range','if-range','no-store','private','set-cookie','content-range','CACHE_PREFIX']
           for (const token of requiredSw) if (!sw.toLowerCase().includes(token.toLowerCase())) throw new Error(`sw missing ${token}`)
+          if (!/authorization\|cookie\|range\|if-range\/i\.test\(vary\)/.test(sw)) throw new Error('sw must reject Vary: Range/If-Range responses')
           if (/keys\.filter\(\(key\) => key !== CACHE_NAME\)/.test(sw)) throw new Error('sw deletes unrelated caches')
           const match = sw.match(/CACHE_NAME\s*=\s*['"]([^'"]+)/)
           if (!match) throw new Error('missing CACHE_NAME')
